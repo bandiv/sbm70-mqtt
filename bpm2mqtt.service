@@ -1,0 +1,25 @@
+[Unit]
+Description=SBM70 blood pressure monitor -> MQTT (Home Assistant)
+After=bluetooth.service network-online.target
+Wants=bluetooth.service network-online.target
+
+[Service]
+EnvironmentFile=/etc/default/bpm2mqtt
+ExecStart=/usr/bin/python3 -u /opt/bpm2mqtt/bpm2mqtt.py
+Restart=always
+RestartSec=10
+# Runs as root only because BlueZ's default D-Bus policy allows nothing else;
+# everything else is locked down.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=64M
+
+[Install]
+WantedBy=multi-user.target

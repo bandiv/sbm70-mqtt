@@ -1,0 +1,88 @@
+# Dashboard "Health" (url path dashboard-health): Settings > Dashboards > Add dashboard,
+# then ⋮ > Edit dashboard > ⋮ > Raw configuration editor, and paste this.
+title: Health
+views:
+  - title: Blood pressure
+    path: blood-pressure
+    icon: mdi:heart-pulse
+    type: sections
+    max_columns: 2
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Blood pressure
+            icon: mdi:heart-pulse
+          - type: markdown
+            grid_options:
+              columns: full
+            content: >-
+              {% set s = states('sensor.sbm70_user_1_systolic') %}{% set d = states('sensor.sbm70_user_1_diastolic') %}{% set p = states('sensor.sbm70_user_1_pulse') %}{% set t = states('sensor.sbm70_user_1_measured_at') %}
+
+              ## {{ s }}/{{ d }} mmHg &nbsp;·&nbsp; pulse {{ p }}
+
+              {% if t not in ['unknown', 'unavailable'] %}Last reading {{ as_local(as_datetime(t)).strftime('%a %d %b, %H:%M') }} ({{ relative_time(as_datetime(t)) }} ago){% else %}No reading yet{% endif %}
+
+              {% if is_state('binary_sensor.sbm70_user_1_irregular_heartbeat', 'on') %}⚠️ **Irregular heartbeat** flagged on the last reading{% endif %}
+
+              {% set m = states('counter.bp_morning_readings') | int(0) %}{% set a = states('counter.bp_afternoon_readings') | int(0) %}
+              **Today:** morning {{ [m, 2] | min }}/2 {{ '✅' if m >= 2 else '⏳' }} &nbsp;·&nbsp; afternoon {{ [a, 2] | min }}/2 {{ '✅' if a >= 2 else ('⏳' if now().hour >= 12 else '') }}
+
+              {% if is_state('binary_sensor.sbm70_bridge', 'off') %}⚠️ Bridge offline: readings stay on the monitor and sync when it's back.{% endif %}
+          - type: tile
+            entity: sensor.sbm70_user_1_systolic
+            name: Systolic
+          - type: tile
+            entity: sensor.sbm70_user_1_diastolic
+            name: Diastolic
+          - type: tile
+            entity: sensor.sbm70_user_1_pulse
+            name: Pulse
+          - type: tile
+            entity: binary_sensor.sbm70_user_1_irregular_heartbeat
+            name: Irregular heartbeat
+      - type: grid
+        cards:
+          - type: heading
+            heading: Last 14 days
+            icon: mdi:chart-line
+          - type: history-graph
+            title: Systolic / diastolic
+            hours_to_show: 336
+            grid_options:
+              columns: full
+            entities:
+              - entity: sensor.sbm70_user_1_systolic
+                name: Systolic
+              - entity: sensor.sbm70_user_1_diastolic
+                name: Diastolic
+          - type: history-graph
+            title: Pulse
+            hours_to_show: 336
+            grid_options:
+              columns: full
+            entities:
+              - entity: sensor.sbm70_user_1_pulse
+                name: Pulse
+      - type: grid
+        cards:
+          - type: heading
+            heading: Reminders
+            icon: mdi:alarm
+            heading_style: subtitle
+          - type: entities
+            grid_options:
+              columns: full
+            entities:
+              - entity: input_datetime.bp_morning_reminder
+                name: Morning reminder (if < 2 readings before 12:00)
+              - entity: input_datetime.bp_afternoon_reminder
+                name: Afternoon reminder (if < 2 readings from 12:00)
+              - entity: automation.blood_pressure_reading_reminder
+                name: Reminders enabled
+              - entity: counter.bp_morning_readings
+                name: Morning readings today
+              - entity: counter.bp_afternoon_readings
+                name: Afternoon readings today
+              - entity: binary_sensor.sbm70_bridge
+                name: Bridge

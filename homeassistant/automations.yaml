@@ -1,0 +1,84 @@
+# Twice-daily routine: 2 readings in the morning (measured before 12:00) and 2 in the afternoon.
+# Needs these helpers (Settings > Devices & services > Helpers):
+#   counter.bp_morning_readings, counter.bp_afternoon_readings   (minimum 0, step 1)
+#   input_datetime.bp_morning_reminder (time, e.g. 10:00), input_datetime.bp_afternoon_reminder (e.g. 18:00)
+# Replace notify.mobile_app_your_phone with your phone's notify service.
+
+- id: bp_count_readings
+  alias: Blood pressure - count readings
+  description: >-
+    Counts readings per session by the monitor's own timestamp (a late transfer still counts for the
+    right session), resets at midnight, and clears the session's reminder once 2 readings are in.
+    Ignores HA restarts / MQTT re-delivery (from unknown/unavailable).
+  mode: queued
+  triggers:
+    - trigger: state
+      entity_id: sensor.sbm70_user_1_measured_at
+      id: reading
+    - trigger: time
+      at: "00:00:00"
+      id: midnight
+  actions:
+    - choose:
+        - conditions:
+            - condition: trigger
+              id: midnight
+          sequence:
+            - action: counter.reset
+              target:
+                entity_id: [counter.bp_morning_readings, counter.bp_afternoon_readings]
+        - conditions:
+            - condition: trigger
+              id: reading
+            - condition: template
+              value_template: >-
+                {{ trigger.from_state is not none
+                   and trigger.from_state.state not in ['unknown', 'unavailable']
+                   and trigger.to_state.state not in ['unknown', 'unavailable']
+                   and trigger.to_state.state != trigger.from_state.state }}
+            - condition: template
+              value_template: "{{ as_local(as_datetime(trigger.to_state.state)).date() == now().date() }}"
+          sequence:
+            - variables:
+                session: "{{ 'morning' if as_local(as_datetime(trigger.to_state.state)).hour < 12 else 'afternoon' }}"
+            - action: counter.increment
+              target:
+                entity_id: "counter.bp_{{ session }}_readings"
+            - if:
+                - condition: template
+                  value_template: "{{ states('counter.bp_' ~ session ~ '_readings') | int(0) >= 2 }}"
+              then:
+                - action: notify.mobile_app_your_phone
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "bp_reminder_{{ session }}"
+
+- id: bp_reading_reminder
+  alias: Blood pressure - reading reminder
+  description: Push reminder at the session's reminder time if fewer than 2 readings have arrived.
+  mode: single
+  triggers:
+    - trigger: time
+      at: input_datetime.bp_morning_reminder
+      id: morning
+    - trigger: time
+      at: input_datetime.bp_afternoon_reminder
+      id: afternoon
+  actions:
+    - variables:
+        session: "{{ trigger.id }}"
+        n: "{{ states('counter.bp_' ~ trigger.id ~ '_readings') | int(0) }}"
+    - condition: template
+      value_template: "{{ n < 2 }}"
+    - action: notify.mobile_app_your_phone
+      data:
+        title: "Blood pressure: {{ session }} readings"
+        message: >-
+          {% if n == 0 %}No {{ session }} readings yet. Take 2, one minute apart.{% else %}Only 1 {{ session }}
+          reading so far. Take the second one.{% endif %}{% if is_state('binary_sensor.sbm70_bridge', 'off') %}
+          (The bridge is offline, so readings you already took may sync later.){% endif %}
+        data:
+          tag: "bp_reminder_{{ session }}"
+          clickAction: /dashboard-health/blood-pressure
+          notification_icon: mdi:heart-pulse
